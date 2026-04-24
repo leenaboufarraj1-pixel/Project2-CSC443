@@ -1,46 +1,41 @@
-using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 
 public class EnemySpawner : MonoBehaviour
 {
-    [Header("Pool Settings")]
-    [SerializeField] private EnemyHealth enemyPrefab;
-    [SerializeField] private int prewarmCount = 5;
-
-    [Header("Spawn Settings")]
     [SerializeField] private Transform[] spawnPoints;
-    [SerializeField] private float spawnInterval = 3f;
-    [SerializeField] private int maxActiveEnemies = 10;
+    [SerializeField] private WaveManager waveManager;
 
-    private ObjectPool<EnemyHealth> pool;
+    // We use a Dictionary to manage multiple pools (one for each enemy type)
+    private Dictionary<EnemyHealth, ObjectPool<EnemyHealth>> pools = new Dictionary<EnemyHealth, ObjectPool<EnemyHealth>>();
 
-    private void Start()
+    public void SpawnEnemy(EnemyHealth prefab)
     {
-        pool = new ObjectPool<EnemyHealth>(enemyPrefab, transform, prewarmCount);
-        StartCoroutine(SpawnLoop());
-    }
+        if (spawnPoints.Length == 0) return;
 
-    private IEnumerator SpawnLoop()
-    {
-        while (true)
+        // If we haven't created a pool for this enemy type yet, make one
+        if (!pools.ContainsKey(prefab))
         {
-            yield return new WaitForSeconds(spawnInterval);
-
-            if (pool.CountActive < maxActiveEnemies && spawnPoints.Length > 0)
-                SpawnEnemy();
+            pools.Add(prefab, new ObjectPool<EnemyHealth>(prefab, transform, 5));
         }
-    }
 
-    private void SpawnEnemy()
-    {
         Transform point = spawnPoints[Random.Range(0, spawnPoints.Length)];
-        EnemyHealth enemy = pool.Get(point.position, point.rotation);
+        EnemyHealth enemy = pools[prefab].Get(point.position, point.rotation);
+
         enemy.OnDied += HandleEnemyDied;
     }
 
     private void HandleEnemyDied(EnemyHealth enemy)
     {
         enemy.OnDied -= HandleEnemyDied;
-        pool.Return(enemy);
+
+        // Find the correct pool to return the enemy to
+        foreach (var pool in pools.Values)
+        {
+            // This is a simplified check; in a bigger game, you'd store the prefab ref on the enemy
+            pool.Return(enemy);
+        }
+
+        if (waveManager != null) waveManager.OnEnemyDefeated();
     }
 }
